@@ -13,78 +13,57 @@
 // types/globe-manipulator
 
 function Globe(canvas, options) {
-    this.landColor = hex2num("#028482FF"); //[ 2/255.0, 132/255.0, 130/255.0,1];
-    this.landFrontColor = hex2num("#7ABA7AAA"); //[122.0/255.0, 0.6470588235294118,0.7647058823529411,0.8666666666666667];
+    var w, h, ratio, viewer, manipulator;
 
-    this.countryColor = hex2num("#000000FF"); //[0.0,0.0,0.0,1];
-    this.waveColor = hex2num("#000000FF");
-
-    var w,h;
-    if (options !== undefined) {
-        if (options.globeBackColor !== undefined) {
-            this.landColor = hex2num(options.globeBackColor);
-        }
-
-        if (options.globeFrontColor !== undefined) {
-            this.landFrontColor = hex2num(options.globeFrontColor);
-        }
-
-        if (options.globeLinesColor !== undefined) {
-            this.countryColor = hex2num(options.globeLinesColor);
-        }
-
-        if (options.waveColor !== undefined) {
-            this.waveColor = hex2num(options.waveColor);
-        }
-
-        this.wave = options.wave && (new Wave());
-
-        if (options.width !== undefined) {
-            w = options.width;
-        }
-        if (options.height !== undefined) {
-            h = options.height;
-        }
-    }
-
-    
-    if (w === undefined || h === undefined) {
-        w = window.innerWidth;
-        h = window.innerHeight;
-    }
-
+    // assign the canvas
     this.canvas = canvas;
-    canvas.width = w;
-    canvas.height = h;
-    var ratio = canvas.width/canvas.height;
 
-    this.viewer = new osgViewer.Viewer(canvas);
-    this.viewer.init();
-    this.viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
+    // ensure options is valid
+    options = options || {};
 
-    var manipulator = new osgGA.OrbitManipulator(options); // GlobeManipulator(options);
-    this.viewer.setupManipulator(manipulator);
+    // initialise the width and height
+    w = canvas.width = typeof options.width != 'undefined' ? options.width : window.innerWidth;
+    h = canvas.height = typeof options.height != 'undefined' ? options.height : window.innerHeight;
+    ratio = w / h;
+
+    // initialise colors
+    this.landColor = hex2num(options.globeBackColor || '#028482FF');
+    this.landFrontColor = hex2num(options.globeFrontColor || '#7ABA7AAA');
+    this.countryColor = hex2num(options.globeLinesColor || '#000000FF');
+    this.waveColor = hex2num(options.waveColor || '#000000FF');
+
+    // create the wave (if we are using it)
+    this.wave = options.wave && (new Wave());
+
+    // initialise the viewer manipulator
+    manipulator = new osgGA.OrbitManipulator(options);
     manipulator.setDistance(2.5*6378137);
     manipulator.setMaxDistance(2.5*6378137);
     manipulator.setMinDistance(6378137);
 
+    // initialise the viewer
+    viewer = this.viewer = new osgViewer.Viewer(canvas);
+    viewer.init();
+    viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
+    viewer.setupManipulator(manipulator);
+
+    // create the scene
+    this.sceneData = this.createScene();
+    viewer.setSceneData(this.sceneData.root);
+    viewer.run();
+
+    /*
     this.viewer.run = function() {
         osgViewer.Viewer.prototype.run.call(this);
     };
-
-    var result = this.createScene();
-    this.items = result.items;
-    this.viewer.setSceneData(result.root);
-    this.viewer.run();
+    */
 }
 
 Globe.prototype = {
     getWaveShaderVolume: function() {
-        var vertexshader = _shaders['wave.vert'];
-        var fragmentshader = _shaders['wave.frag'];
         var program = new osg.Program(
-            new osg.Shader(gl.VERTEX_SHADER, vertexshader),
-            new osg.Shader(gl.FRAGMENT_SHADER, fragmentshader));
+            new osg.Shader(gl.VERTEX_SHADER, _shaders['wave.vert']),
+            new osg.Shader(gl.FRAGMENT_SHADER, _shaders['wave.frag']));
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.waveColor,"fragColor");
         var scale = osg.Uniform.createFloat1(scale,"scale");
@@ -170,7 +149,7 @@ Globe.prototype = {
         node.duration = undefined;
 
         // add the node to the sceneGraph
-        this.items.addChild(node);
+        this.sceneData.items.addChild(node);
 
         node.dispose = function() {
             this.updateCallback = undefined;
@@ -187,8 +166,8 @@ Globe.prototype = {
         return node;
     },
     dispose: function() {
-        while (this.items.getChildren().length > 0 ) {
-            this.items.getChildren()[0].dispose();
+        while (this.sceneData.items.getChildren().length > 0 ) {
+            this.sceneData.items.getChildren()[0].dispose();
         }
     },
 
