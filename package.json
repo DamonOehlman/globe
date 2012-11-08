@@ -1,0 +1,23 @@
+{
+  "name": "osg.globe",
+  "description": "OSG.js Globe Implementation",
+  "author": "Cedric Pinson <cedric@plopbyte.com>",
+  "version": "0.1.6",
+  "private": "true",
+  "devDependencies": {
+    "rigger-collate": "0.5.x"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/cedricpinson/globe.git"
+  },
+  "bugs": {
+    "url": "git://github.com/cedricpinson/globe.git/issues"
+  },
+  "scripts": {
+    "build": "rig src globe.js > globe.js"
+  },
+  "contributors": [
+    "Damon Oehlman <damon.oehlman@sidelab.com>"
+  ]
+}

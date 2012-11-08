@@ -4,9 +4,13 @@
  *  Cedric Pinson <cedric.pinson@plopbyte.com>
  */
 
-glass.include('fns/hex2num');
-glass.include('types/wave');
-glass.include('types/globe-manipulator');
+// req: osg, underscore as _
+
+//=collate shaders { "transform": "array" }
+
+//= fns/hex2num
+//= types/wave
+//= types/globe-manipulator
 
 function Globe(canvas, options) {
     this.landColor = hex2num("#028482FF"); //[ 2/255.0, 132/255.0, 130/255.0,1];
@@ -57,7 +61,7 @@ function Globe(canvas, options) {
 //    try {
         this.viewer = new osgViewer.Viewer(canvas);
         this.viewer.init();
-        var manipulator = new osgGA.GlobeManipulator(options);
+        var manipulator = new GlobeManipulator(options);
         this.viewer.setupManipulator(manipulator);
 
         this.viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
@@ -81,8 +85,8 @@ function Globe(canvas, options) {
 
 Globe.prototype = {
     getWaveShaderVolume: function() {
-        var vertexshader = glass.inline('shaders/wave.vert');
-        var fragmentshader = glass.inline('shaders/wave.frag');
+        var vertexshader = _shaders['wave.vert'];
+        var fragmentshader = _shaders['wave.frag'];
         var program = osg.Program.create(
             osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
             osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
@@ -98,8 +102,8 @@ Globe.prototype = {
         return stateset;
     },
     getWaveShaderFlat: function() {
-        var vertexshader = glass.inline('shaders/wave-flat.vert');
-        var fragmentshader = glass.inline('shaders/wave-flat.frag');
+        var vertexshader = _shaders['wave-flat.vert'];
+        var fragmentshader = _shaders['wave-flat.frag'];
         var program = osg.Program.create(
             osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
             osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
@@ -195,8 +199,8 @@ Globe.prototype = {
 
     getWorldProgram: function() {
         if (this.WorldProgram === undefined) {
-            var vertexshader = glass.inline('shaders/world.vert');
-            var fragmentshader = glass.inline('shaders/world.frag');
+            var vertexshader = _shaders['world.vert'];
+            var fragmentshader = _shaders['world.frag'];
             var program = osg.Program.create(
                 osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
                 osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
@@ -224,8 +228,8 @@ Globe.prototype = {
 
 
     getCountryShader: function() {
-        var vertexshader = glass.inline('shaders/country.vert');
-        var fragmentshader = glass.inline('shaders/country.frag');
+        var vertexshader = _shaders['country.vert'];
+        var fragmentshader = _shaders['country.frag'];
         var program = osg.Program.create(
             osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
             osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
@@ -289,8 +293,8 @@ Globe.prototype = {
     },
     getItemShader: function() {
         if (this.ItemShader === undefined) {
-            var vertexshader = glass.inline('shaders/item.vert');
-            var fragmentshader = glass.inline('shaders/item.frag');
+            var vertexshader = _shaders['item.vert'];
+            var fragmentshader = _shaders['item.frag'];
             var program = osg.Program.create(
                 osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
                 osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
