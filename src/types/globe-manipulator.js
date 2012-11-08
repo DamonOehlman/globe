@@ -451,6 +451,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
         var target;
         var distance;
         var eye;
+
         if (this.goToLocationRunning === true ) {
             distance = this.distance;
             target = this.target;

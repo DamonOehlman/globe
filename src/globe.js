@@ -10,7 +10,7 @@
 
 //= fns/hex2num
 //= types/wave
-//= types/globe-manipulator
+// types/globe-manipulator
 
 function Globe(canvas, options) {
     this.landColor = hex2num("#028482FF"); //[ 2/255.0, 132/255.0, 130/255.0,1];
@@ -58,28 +58,24 @@ function Globe(canvas, options) {
     canvas.height = h;
     var ratio = canvas.width/canvas.height;
 
-//    try {
-        this.viewer = new osgViewer.Viewer(canvas);
-        this.viewer.init();
-        this.viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
+    this.viewer = new osgViewer.Viewer(canvas);
+    this.viewer.init();
+    this.viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
 
-        var manipulator = new GlobeManipulator(options);
-        this.viewer.setupManipulator(manipulator);
-        manipulator.setDistance(2.5*6378137);
-        manipulator.setMaxDistance(2.5*6378137);
-        manipulator.setMinDistance(6378137);
+    var manipulator = new osgGA.OrbitManipulator(options); // GlobeManipulator(options);
+    this.viewer.setupManipulator(manipulator);
+    manipulator.setDistance(2.5*6378137);
+    manipulator.setMaxDistance(2.5*6378137);
+    manipulator.setMinDistance(6378137);
 
-        this.viewer.run = function() {
-            osgViewer.Viewer.prototype.run.call(this);
-        };
+    this.viewer.run = function() {
+        osgViewer.Viewer.prototype.run.call(this);
+    };
 
-        var result = this.createScene();
-        this.items = result.items;
-        this.viewer.setSceneData(result.root);
-        this.viewer.run();
-//    } catch (er) {
-//        osg.log("exception in osgViewer " + er);
-//    }   
+    var result = this.createScene();
+    this.items = result.items;
+    this.viewer.setSceneData(result.root);
+    this.viewer.run();
 }
 
 Globe.prototype = {
@@ -335,7 +331,7 @@ Globe.prototype = {
 
         var world = osgDB.parseSceneGraph(getWorld());
         var country = osgDB.parseSceneGraph(getCountry());
-        var coast = osgDB.parseSceneGraph(getCoast());
+        var coast = osgDB.parseSceneGraph({});
 
         var backSphere = new osg.Node();
         backSphere.addChild(world);
@@ -385,7 +381,7 @@ Globe.prototype = {
             return f;
         };
 
-        viewer.getManipulator().update(-2.0, 0);
+        // viewer.getManipulator().update(-2.0, 0);
         if (this.wave !== undefined) {
             var that = this;
             var getWaveShader = function() { return that.getWaveShaderVolume(); };
