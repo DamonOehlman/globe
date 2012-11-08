@@ -86,7 +86,7 @@ Globe.prototype = {
     getWaveShaderVolume: function() {
         var vertexshader = _shaders['wave.vert'];
         var fragmentshader = _shaders['wave.frag'];
-        var program = osg.Program.create(
+        var program = new osg.Program(
             new osg.Shader(gl.VERTEX_SHADER, vertexshader),
             new osg.Shader(gl.FRAGMENT_SHADER, fragmentshader));
         var stateset = new osg.StateSet();
@@ -101,7 +101,7 @@ Globe.prototype = {
         return stateset;
     },
     getWaveShaderFlat: function() {
-        var program = osg.Program.create(
+        var program = new osg.Program(
             new osg.Shader(gl.VERTEX_SHADER, _shaders['wave-flat.vert']),
             new osg.Shader(gl.FRAGMENT_SHADER, _shaders['wave-flat.frag']));
         var stateset = new osg.StateSet();
@@ -131,9 +131,9 @@ Globe.prototype = {
         var w = 500000;
         var h = 500000;
         var node = new osg.MatrixTransform();
-        var geom = osg.createTexturedQuad(-w/2.0, -h/2.0, 0,
-                                          w, 0, 0,
-                                          0, h, 0);
+        var geom = osg.createTexturedQuadGeometry(-w/2.0, -h/2.0, 0,
+                                                  w, 0, 0,
+                                                  0, h, 0);
         node.addChild(geom);
         var stateSet = this.getItemShader();
         stateSet.setTextureAttributeAndMode(0, texture);
@@ -158,7 +158,9 @@ Globe.prototype = {
 
         var lat = latitude * Math.PI/180.0;
         var lng = longitude * Math.PI/180.0;
-        var matrix = this.ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(lat, lng, 1000);
+        var matrix = [];
+
+        this.ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(lat, lng, 1000, matrix);
         node.originalMatrix = osg.Matrix.copy(matrix);
         node.setMatrix(matrix);
         
@@ -196,7 +198,7 @@ Globe.prototype = {
 
     getWorldProgram: function() {
         if (this.WorldProgram === undefined) {
-            var program = osg.Program.create(
+            var program = new osg.Program(
                 new osg.Shader(gl.VERTEX_SHADER, _shaders['world.vert']),
                 new osg.Shader(gl.FRAGMENT_SHADER, _shaders['world.frag']));
 
@@ -223,7 +225,7 @@ Globe.prototype = {
 
 
     getCountryShader: function() {
-        var program = osg.Program.create(
+        var program = new osg.Program(
             new osg.Shader(gl.VERTEX_SHADER, _shaders['country.vert']),
             new osg.Shader(gl.FRAGMENT_SHADER, _shaders['country.frag']));
         var stateset = new osg.StateSet();
@@ -286,7 +288,7 @@ Globe.prototype = {
     },
     getItemShader: function() {
         if (this.ItemShader === undefined) {
-            var program = osg.Program.create(
+            var program = new osg.Program(
                 new osg.Shader(gl.VERTEX_SHADER, _shaders['item.vert']),
                 new osg.Shader(gl.FRAGMENT_SHADER, _shaders['item.frag']));
 

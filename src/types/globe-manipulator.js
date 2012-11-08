@@ -5,7 +5,7 @@ function GlobeManipulator(options) {
     this.distance = 25;
     this.target = [ 0,0, 0];
     this.eye = [ 0, this.distance, 0];
-    this.rotation = osg.Matrix.makeRotate(-Math.PI/3.0, 1,0,0); // osg.Quat.makeIdentity();
+    this.rotation = [];
     this.up = [0, 0, 1];
     this.time = 0.0;
     this.dx = 0.0;
@@ -34,6 +34,9 @@ function GlobeManipulator(options) {
     this.contacts = [];
     this.contactsPosition = [];
     this.zoomModeUsed = false;
+
+    // initialise the rotation
+    osg.Matrix.makeRotate(-Math.PI/3.0, 1,0,0, this.rotation);
 
     this.scaleFactor = 10.0;
     if (options !== undefined && options.rotationSpeedFactor !== undefined) {
@@ -80,13 +83,13 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
 
     computeRotation: function(dx, dy) {
         
-        var scale = 1.0/10.0;
-        scale = this.scale;
+        var scale = this.scale,
+            of = [];
 
-        var of = osg.Matrix.makeRotate(dx * scale, 0,0,1, []);
+        osg.Matrix.makeRotate(dx * scale, 0, 0, 1, of);
         var r = osg.Matrix.mult(this.rotation, of, []);
 
-        of = osg.Matrix.makeRotate(dy * scale/2.0, 1,0,0, []);
+        osg.Matrix.makeRotate(dy * scale/2.0, 1,0,0, of);
         var r2 = osg.Matrix.mult(of,r, []);
 
         // test that the eye is not too up and not too down to not kill
@@ -339,11 +342,9 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
     },
 
     getHeight: function() {
-        var h;
-        var lat;
-        var lng;
-        
-        var llh = this.ellipsoidModel.convertXYZToLatLongHeight(this.eye[0], this.eye[1], this.eye[2]);
+        var h, lat, lng, llh = [];
+
+        this.ellipsoidModel.convertXYZToLatLongHeight(this.eye[0], this.eye[1], this.eye[2], llh);
         return llh[2];
         //osg.log("height " + llh[2] + " distance " + this.distance);
     },

@@ -165,7 +165,7 @@ function GlobeManipulator(options) {
     this.distance = 25;
     this.target = [ 0,0, 0];
     this.eye = [ 0, this.distance, 0];
-    this.rotation = osg.Matrix.makeRotate(-Math.PI/3.0, 1,0,0); // osg.Quat.makeIdentity();
+    this.rotation = [];
     this.up = [0, 0, 1];
     this.time = 0.0;
     this.dx = 0.0;
@@ -194,6 +194,9 @@ function GlobeManipulator(options) {
     this.contacts = [];
     this.contactsPosition = [];
     this.zoomModeUsed = false;
+
+    // initialise the rotation
+    osg.Matrix.makeRotate(-Math.PI/3.0, 1,0,0, this.rotation);
 
     this.scaleFactor = 10.0;
     if (options !== undefined && options.rotationSpeedFactor !== undefined) {
@@ -240,13 +243,13 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
 
     computeRotation: function(dx, dy) {
         
-        var scale = 1.0/10.0;
-        scale = this.scale;
+        var scale = this.scale,
+            of = [];
 
-        var of = osg.Matrix.makeRotate(dx * scale, 0,0,1, []);
+        osg.Matrix.makeRotate(dx * scale, 0, 0, 1, of);
         var r = osg.Matrix.mult(this.rotation, of, []);
 
-        of = osg.Matrix.makeRotate(dy * scale/2.0, 1,0,0, []);
+        osg.Matrix.makeRotate(dy * scale/2.0, 1,0,0, of);
         var r2 = osg.Matrix.mult(of,r, []);
 
         // test that the eye is not too up and not too down to not kill
@@ -499,11 +502,9 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
     },
 
     getHeight: function() {
-        var h;
-        var lat;
-        var lng;
-        
-        var llh = this.ellipsoidModel.convertXYZToLatLongHeight(this.eye[0], this.eye[1], this.eye[2]);
+        var h, lat, lng, llh = [];
+
+        this.ellipsoidModel.convertXYZToLatLongHeight(this.eye[0], this.eye[1], this.eye[2], llh);
         return llh[2];
         //osg.log("height " + llh[2] + " distance " + this.distance);
     },
@@ -718,11 +719,10 @@ function Globe(canvas, options) {
 //    try {
         this.viewer = new osgViewer.Viewer(canvas);
         this.viewer.init();
-        var manipulator = new GlobeManipulator(options);
-        this.viewer.setupManipulator(manipulator);
-
         this.viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
 
+        var manipulator = new GlobeManipulator(options);
+        this.viewer.setupManipulator(manipulator);
         manipulator.setDistance(2.5*6378137);
         manipulator.setMaxDistance(2.5*6378137);
         manipulator.setMinDistance(6378137);
@@ -744,9 +744,9 @@ Globe.prototype = {
     getWaveShaderVolume: function() {
         var vertexshader = _shaders['wave.vert'];
         var fragmentshader = _shaders['wave.frag'];
-        var program = osg.Program.create(
-            osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
-            osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
+        var program = new osg.Program(
+            new osg.Shader(gl.VERTEX_SHADER, vertexshader),
+            new osg.Shader(gl.FRAGMENT_SHADER, fragmentshader));
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.waveColor,"fragColor");
         var scale = osg.Uniform.createFloat1(scale,"scale");
@@ -759,11 +759,9 @@ Globe.prototype = {
         return stateset;
     },
     getWaveShaderFlat: function() {
-        var vertexshader = _shaders['wave-flat.vert'];
-        var fragmentshader = _shaders['wave-flat.frag'];
-        var program = osg.Program.create(
-            osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
-            osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
+        var program = new osg.Program(
+            new osg.Shader(gl.VERTEX_SHADER, _shaders['wave-flat.vert']),
+            new osg.Shader(gl.FRAGMENT_SHADER, _shaders['wave-flat.frag']));
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.waveColor,"fragColor");
         var scale = osg.Uniform.createFloat1(scale,"scale");
@@ -791,9 +789,9 @@ Globe.prototype = {
         var w = 500000;
         var h = 500000;
         var node = new osg.MatrixTransform();
-        var geom = osg.createTexturedQuad(-w/2.0, -h/2.0, 0,
-                                          w, 0, 0,
-                                          0, h, 0);
+        var geom = osg.createTexturedQuadGeometry(-w/2.0, -h/2.0, 0,
+                                                  w, 0, 0,
+                                                  0, h, 0);
         node.addChild(geom);
         var stateSet = this.getItemShader();
         stateSet.setTextureAttributeAndMode(0, texture);
@@ -818,7 +816,9 @@ Globe.prototype = {
 
         var lat = latitude * Math.PI/180.0;
         var lng = longitude * Math.PI/180.0;
-        var matrix = this.ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(lat, lng, 1000);
+        var matrix = [];
+
+        this.ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(lat, lng, 1000, matrix);
         node.originalMatrix = osg.Matrix.copy(matrix);
         node.setMatrix(matrix);
         
@@ -856,11 +856,9 @@ Globe.prototype = {
 
     getWorldProgram: function() {
         if (this.WorldProgram === undefined) {
-            var vertexshader = _shaders['world.vert'];
-            var fragmentshader = _shaders['world.frag'];
-            var program = osg.Program.create(
-                osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
-                osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
+            var program = new osg.Program(
+                new osg.Shader(gl.VERTEX_SHADER, _shaders['world.vert']),
+                new osg.Shader(gl.FRAGMENT_SHADER, _shaders['world.frag']));
 
             this.WorldProgram = program;
         }
@@ -885,11 +883,9 @@ Globe.prototype = {
 
 
     getCountryShader: function() {
-        var vertexshader = _shaders['country.vert'];
-        var fragmentshader = _shaders['country.frag'];
-        var program = osg.Program.create(
-            osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
-            osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
+        var program = new osg.Program(
+            new osg.Shader(gl.VERTEX_SHADER, _shaders['country.vert']),
+            new osg.Shader(gl.FRAGMENT_SHADER, _shaders['country.frag']));
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.countryColor,"fragColor");
         stateset.setAttributeAndMode(program);
@@ -950,11 +946,9 @@ Globe.prototype = {
     },
     getItemShader: function() {
         if (this.ItemShader === undefined) {
-            var vertexshader = _shaders['item.vert'];
-            var fragmentshader = _shaders['item.frag'];
-            var program = osg.Program.create(
-                osg.Shader.create(gl.VERTEX_SHADER, vertexshader),
-                osg.Shader.create(gl.FRAGMENT_SHADER, fragmentshader));
+            var program = new osg.Program(
+                new osg.Shader(gl.VERTEX_SHADER, _shaders['item.vert']),
+                new osg.Shader(gl.FRAGMENT_SHADER, _shaders['item.frag']));
 
             this.ItemShader = program;
         }

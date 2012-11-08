@@ -33,14 +33,18 @@
 <script type="text/javascript" src="globe.js"></script>
 <script type="text/javascript" src="data/world.js"></script>
 <!-- <script type="text/javascript" src="data/height.js"></script> -->
-<script type="text/javascript" src="data/country.js"></script>
-<script type="text/javascript" src="data/coast.js"></script>
+<!-- <script type="text/javascript" src="data/country.js"></script> -->
+<!-- <script type="text/javascript" src="data/coast.js"></script> -->
+<script>
+function getCoast() { return {}; }
+function getCountry() { return {}; }
+</script>
 
 <script type="text/javascript">
 window.addEventListener("load", function() {
     var options = {
-       //globeBackColor: "#73514F55",
-       globeBackColor: "#396A92aa",
+       globeBackColor: "#73514F55",
+       // globeBackColor: "#396A92aa",
        globeFrontColor: "#9AB4CBbb",
        globeLinesColor: "#00000044",
 
