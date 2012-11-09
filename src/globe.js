@@ -171,21 +171,10 @@ Globe.prototype = {
         }
     },
 
-    getWorldProgram: function() {
-        if (this.WorldProgram === undefined) {
-            var program = new osg.Program(
-                new osg.Shader(gl.VERTEX_SHADER, _shaders['world.vert']),
-                new osg.Shader(gl.FRAGMENT_SHADER, _shaders['world.frag']));
-
-            this.WorldProgram = program;
-        }
-        return this.WorldProgram;
-    },
-
     getWorldShaderBack: function() {
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.landColor,"fragColor");
-        stateset.setAttributeAndMode(this.getWorldProgram());
+        stateset.setAttributeAndMode(this._getProgram('world'));
         stateset.addUniform(uniform);
         return stateset;
     },
@@ -193,20 +182,19 @@ Globe.prototype = {
     getWorldShaderFront: function () {
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.landFrontColor,"fragColor");
-        stateset.setAttributeAndMode(this.getWorldProgram());
+        stateset.setAttributeAndMode(this._getProgram('world'));
         stateset.addUniform(uniform);
         return stateset;
     },
 
 
     getCountryShader: function() {
-        var program = new osg.Program(
-            new osg.Shader(gl.VERTEX_SHADER, _shaders['country.vert']),
-            new osg.Shader(gl.FRAGMENT_SHADER, _shaders['country.frag']));
-        var stateset = new osg.StateSet();
-        var uniform = osg.Uniform.createFloat4(this.countryColor,"fragColor");
-        stateset.setAttributeAndMode(program);
+        var stateset = new osg.StateSet(),
+            uniform = osg.Uniform.createFloat4(this.countryColor,"fragColor");
+
+        stateset.setAttributeAndMode(this._getProgram('country'));
         stateset.addUniform(uniform);
+        
         return stateset;
     },
 
@@ -261,27 +249,21 @@ Globe.prototype = {
         }
         return this.itemUpdateCallback;
     },
+
     getItemShader: function() {
-        if (this.ItemShader === undefined) {
-            var program = new osg.Program(
+        var stateset = new osg.StateSet(),
+            uniform = osg.Uniform.createFloat4([1.0, 0.0, 1.0, 0.5],"fragColor"),
+            baseColor = osg.Uniform.createFloat4([1.0, 1.0, 1.0, 1.0],"baseColor");
+
+        this.itemShader = this.itemShader || new osg.Program(
                 new osg.Shader(gl.VERTEX_SHADER, _shaders['item.vert']),
                 new osg.Shader(gl.FRAGMENT_SHADER, _shaders['item.frag']));
 
-            this.ItemShader = program;
-        }
-        var stateset = new osg.StateSet();
-        var uniform = osg.Uniform.createFloat4([1.0,
-                                                0.0,
-                                                1.0,
-                                                0.5],"fragColor");
-        var baseColor = osg.Uniform.createFloat4([1.0,
-                                                  1.0,
-                                                  1.0,
-                                                  1.0],"baseColor");
-        stateset.setAttributeAndMode(this.ItemShader);
+        stateset.setAttributeAndMode(this.itemShader);
         //stateset.setAttributeAndMode(new osg.BlendFunc('ONE', 'ONE_MINUS_SRC_ALPHA'));
         stateset.addUniform(uniform);
         stateset.addUniform(baseColor);
+
         return stateset;
     },
 
@@ -415,5 +397,16 @@ Globe.prototype = {
         }
 
         return { root: scene, items: items};
+    },
+
+    /**
+    ## _getProgram(name)
+
+    This internal method is used to create a new program and cache it in the world instance
+    */
+    _getProgram: function(name) {
+        return this[name + 'Program'] || (this[name + 'Program'] = new osg.Program(
+            new osg.Shader(gl.VERTEX_SHADER, _shaders[name + '.vert']),
+            new osg.Shader(gl.FRAGMENT_SHADER, _shaders[name + '.frag'])));
     }
 };
