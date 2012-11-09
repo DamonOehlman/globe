@@ -4,6 +4,7 @@ precision highp float;
 
 uniform vec4 fragColor;
 varying float height;
+
 void main(void) {
       gl_FragColor = fragColor * height;
 }

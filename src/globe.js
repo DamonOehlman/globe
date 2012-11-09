@@ -164,6 +164,7 @@ Globe.prototype = {
 
         return node;
     },
+
     dispose: function() {
         while (this.sceneData.items.getChildren().length > 0 ) {
             this.sceneData.items.getChildren()[0].dispose();
@@ -186,7 +187,7 @@ Globe.prototype = {
 
         stateset.setAttributeAndMode(this._getProgram('world'));
         stateset.addUniform(uniform);
-        
+
         return stateset;
     },
 
@@ -267,27 +268,12 @@ Globe.prototype = {
     },
 
     createScene: function() {
-        var viewer = this.viewer;
-
-        var optionsURL = function() {
-            var vars = [], hash;
-            var hashes = window.location.href.slice(window.location.href.indexOf('?') + 1).split('&');
-            for(var i = 0; i < hashes.length; i++)
-            {
-                hash = hashes[i].split('=');
-                vars.push(hash[0]);
-                vars[hash[0]] = hash[1];
-            }
-            return vars;
-        };
+        var canvas = this.canvas,
+            viewer = this.viewer,
+            scene = new osg.Node(),
+            ratio = canvas.width / canvas.height;
 
         viewer.getCamera().setClearColor([0,0,0,0]);
-
-
-        var canvas = this.canvas;
-        var ratio = canvas.width/canvas.height;
-
-        var scene = new osg.Node();
 
         var world = osgDB.parseSceneGraph(getWorld());
         var country = osgDB.parseSceneGraph(getCountry());
