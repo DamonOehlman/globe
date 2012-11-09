@@ -61,33 +61,32 @@ function Globe(canvas, options) {
 
 Globe.prototype = {
     getWaveShaderVolume: function() {
-        var program = new osg.Program(
-            new osg.Shader(gl.VERTEX_SHADER, _shaders['wave.vert']),
-            new osg.Shader(gl.FRAGMENT_SHADER, _shaders['wave.frag']));
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.waveColor,"fragColor");
         var scale = osg.Uniform.createFloat1(scale,"scale");
         var uniformTexture = osg.Uniform.createInt1(0, "Texture0");
-        stateset.setAttributeAndMode(program);
+
+        stateset.setAttributeAndMode(this._getProgram('wave'));
         stateset.setAttributeAndMode(new osg.LineWidth(1.0));
         stateset.addUniform(uniform);
         stateset.addUniform(uniformTexture);
         stateset.addUniform(scale);
+
         return stateset;
     },
+
     getWaveShaderFlat: function() {
-        var program = new osg.Program(
-            new osg.Shader(gl.VERTEX_SHADER, _shaders['wave-flat.vert']),
-            new osg.Shader(gl.FRAGMENT_SHADER, _shaders['wave-flat.frag']));
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.waveColor,"fragColor");
         var scale = osg.Uniform.createFloat1(scale,"scale");
         var uniformTexture = osg.Uniform.createInt1(0, "Texture0");
-        stateset.setAttributeAndMode(program);
+
+        stateset.setAttributeAndMode(this._getProgram('waveflat'));
         stateset.setAttributeAndMode(new osg.LineWidth(1.0));
         stateset.addUniform(uniform);
         stateset.addUniform(uniformTexture);
         stateset.addUniform(scale);
+
         return stateset;
     },
 
@@ -174,16 +173,20 @@ Globe.prototype = {
     getWorldShaderBack: function() {
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.landColor,"fragColor");
+
         stateset.setAttributeAndMode(this._getProgram('world'));
         stateset.addUniform(uniform);
+
         return stateset;
     },
 
     getWorldShaderFront: function () {
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.landFrontColor,"fragColor");
+
         stateset.setAttributeAndMode(this._getProgram('world'));
         stateset.addUniform(uniform);
+        
         return stateset;
     },
 
@@ -194,7 +197,7 @@ Globe.prototype = {
 
         stateset.setAttributeAndMode(this._getProgram('country'));
         stateset.addUniform(uniform);
-        
+
         return stateset;
     },
 
@@ -255,11 +258,7 @@ Globe.prototype = {
             uniform = osg.Uniform.createFloat4([1.0, 0.0, 1.0, 0.5],"fragColor"),
             baseColor = osg.Uniform.createFloat4([1.0, 1.0, 1.0, 1.0],"baseColor");
 
-        this.itemShader = this.itemShader || new osg.Program(
-                new osg.Shader(gl.VERTEX_SHADER, _shaders['item.vert']),
-                new osg.Shader(gl.FRAGMENT_SHADER, _shaders['item.frag']));
-
-        stateset.setAttributeAndMode(this.itemShader);
+        stateset.setAttributeAndMode(this._getProgram('item'));
         //stateset.setAttributeAndMode(new osg.BlendFunc('ONE', 'ONE_MINUS_SRC_ALPHA'));
         stateset.addUniform(uniform);
         stateset.addUniform(baseColor);
