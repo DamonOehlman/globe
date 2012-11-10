@@ -10,7 +10,7 @@
 
 //= fns/hex2num
 //= types/wave
-// types/globe-manipulator
+//= types/globe-manipulator
 
 function Globe(canvas, options) {
     var w, h, ratio, viewer, manipulator;
@@ -31,6 +31,9 @@ function Globe(canvas, options) {
     this.landFrontColor = hex2num(options.globeFrontColor || '#7ABA7AAA');
     this.countryColor = hex2num(options.globeLinesColor || '#000000FF');
     this.waveColor = hex2num(options.waveColor || '#000000FF');
+
+    // init ellipsoid model for lat/lng calculations
+    this.ellipsoidModel = new osg.EllipsoidModel();
 
     // create the wave (if we are using it)
     this.wave = options.wave && (new Wave());
@@ -126,15 +129,10 @@ Globe.prototype = {
             }
         }
 
-        if (this.ellipsoidModel === undefined) {
-            this.ellipsoidModel = new osg.EllipsoidModel();
-        }
-
         var lat = latitude * Math.PI/180.0;
         var lng = longitude * Math.PI/180.0;
-        var matrix = [];
+        var matrix = this.ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(lat, lng, 1000, []);
 
-        this.ellipsoidModel.computeLocalToWorldTransformFromLatLongHeight(lat, lng, 1000, matrix);
         node.originalMatrix = osg.Matrix.copy(matrix);
         node.setMatrix(matrix);
         
@@ -148,7 +146,7 @@ Globe.prototype = {
         node.duration = undefined;
 
         // add the node to the sceneGraph
-        this.sceneData.items.addChild(node);
+        this.items.addChild(node);
 
         node.dispose = function() {
             this.updateCallback = undefined;
@@ -228,6 +226,7 @@ Globe.prototype = {
                     ratio = dt/node.duration;
                     if (node.originalMatrix) {
                         var scale;
+
                         if (dt > 1.0) {
                             scale = 1.0;
                         } else {
@@ -271,24 +270,28 @@ Globe.prototype = {
         var canvas = this.canvas,
             viewer = this.viewer,
             scene = new osg.Node(),
-            ratio = canvas.width / canvas.height;
+            items = this.items = new osg.Node(),
+            ratio = canvas.width / canvas.height,
+
+            // parse the data scene graphs
+            world = osgDB.parseSceneGraph(typeof getWorld == 'function' ? getWorld() : {}),
+            country = osgDB.parseSceneGraph(typeof getCountry == 'function' ? getCountry() : {}),
+            coast = osgDB.parseSceneGraph(typeof getCoast == 'function' ? getCoast() : {}),
+
+            // create the front and back spheres
+            backSphere = new osg.Node(),
+            frontSphere = new osg.Node(),
+
+            countryScale = new osg.MatrixTransform();
 
         viewer.getCamera().setClearColor([0,0,0,0]);
 
-        var world = osgDB.parseSceneGraph(getWorld());
-        var country = osgDB.parseSceneGraph(getCountry());
-        var coast = osgDB.parseSceneGraph({});
-
-        var backSphere = new osg.Node();
         backSphere.addChild(world);
-
-        var frontSphere = new osg.Node();
-        frontSphere.addChild(world);
-
         backSphere.setStateSet(this.getWorldShaderBack());
         backSphere.setNodeMask(2);
         backSphere.getOrCreateStateSet().setAttributeAndMode(new osg.CullFace('FRONT'));
 
+        frontSphere.addChild(world);
         frontSphere.setStateSet(this.getWorldShaderFront());
         frontSphere.setNodeMask(2);
         frontSphere.getOrCreateStateSet().setAttributeAndMode(new osg.CullFace('BACK'));
@@ -296,17 +299,19 @@ Globe.prototype = {
 
         country.addChild(coast);
 
-        var countryScale = new osg.MatrixTransform();
         osg.Matrix.makeScale(1.001,1.001,1.001, countryScale.getMatrix());
         countryScale.addChild(country);
 
+        // add the scene children
+        scene.add(backSphere, frontSphere, countryScale, items);
 
+        /*
         scene.addChild(backSphere);
         scene.addChild(frontSphere);
         scene.addChild(countryScale);
-
-        var items = new osg.Node();
         scene.addChild(items);
+        */
+
         items.getOrCreateStateSet().setAttributeAndMode(new osg.Depth('DISABLE'));
         items.getOrCreateStateSet().setAttributeAndMode(new osg.BlendFunc('SRC_ALPHA', 'ONE_MINUS_SRC_ALPHA'));
 
