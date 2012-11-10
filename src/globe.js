@@ -226,6 +226,7 @@ Globe.prototype = {
                     ratio = dt/node.duration;
                     if (node.originalMatrix) {
                         var scale;
+                            height = osg.WGS_84_RADIUS_EQUATOR*0.5;
 
                         if (dt > 1.0) {
                             scale = 1.0;
@@ -233,11 +234,13 @@ Globe.prototype = {
                             scale = osgAnimation.EaseOutElastic(dt);
                         }
 
-                        scale = scale * (this.manipulator.height/osg.WGS_84_RADIUS_EQUATOR);
+                        scale = scale * (height/osg.WGS_84_RADIUS_EQUATOR);
+                        /*
                         if (this.manipulator.height > this.limit) {
                             var rr = 1.0 - (this.manipulator.height-this.limit) * 0.8/(2.5*osg.WGS_84_RADIUS_EQUATOR-this.limit);
                             scale *= rr;
                         }
+                        */
                         node.setMatrix(osg.Matrix.mult(node.originalMatrix, osg.Matrix.makeScale(scale, scale, scale), []));
                     }
 
