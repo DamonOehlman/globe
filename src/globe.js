@@ -9,15 +9,21 @@
 var WGS_84_RADIUS_EQUATOR = 6378137.0,
     DEG2RAD = Math.PI / 180;
 
+// create the osgGlobe namespace
+var osgGlobe = {};
+
 //=collate shaders { "transform": "array" }
 
 //= fns/hex2num
 //= types/wave
-//= manipulators/devicemotion-orbiter
-//= manipulators/devicemotion-explorer
+//= manipulators/orbit
+//= manipulators/position-locked
 //= manipulators/globe-manipulator.original.js
 
-function Globe(canvas, options) {
+/**
+# osgGlobe.Globe
+*/
+osgGlobe.Globe = function(canvas, options) {
     var w, h, ratio, viewer, manipulator;
 
     // assign the canvas
@@ -43,12 +49,8 @@ function Globe(canvas, options) {
     // create the wave (if we are using it)
     this.wave = options.wave && (new Wave());
 
-    // initialise the viewer manipulator
-    // manipulator = new GlobeManipulator(options); // new osgGA.OrbitManipulator(options);
-    manipulator = new DeviceMotionOrbiter(options);
-    manipulator.setDistance(6378137 * 1.2);
-    manipulator.setMaxDistance(6378137 * 2.5);
-    manipulator.setMinDistance(6378137 * 0.95);
+    // create the manipulators
+    manipulator = this._initManipulators(options);
 
     // initialise the viewer
     viewer = this.viewer = new osgViewer.Viewer(canvas);
@@ -72,7 +74,7 @@ function Globe(canvas, options) {
     */
 }
 
-Globe.prototype = {
+osgGlobe.Globe.prototype = {
     getWaveShaderVolume: function() {
         var stateset = new osg.StateSet();
         var uniform = osg.Uniform.createFloat4(this.waveColor,"fragColor");
@@ -407,5 +409,28 @@ Globe.prototype = {
         return this[name + 'Program'] || (this[name + 'Program'] = new osg.Program(
             new osg.Shader(gl.VERTEX_SHADER, _shaders[name + '.vert']),
             new osg.Shader(gl.FRAGMENT_SHADER, _shaders[name + '.frag'])));
+    },
+
+    /**
+    ## _initManipulators()
+
+    The _initManipulators method is used to create all the manipulators that are used, and a 
+    single switch manipulator is returned.
+    */
+    _initManipulators: function(options) {
+        var manipulator,
+            manipulators = this.manipulators = {};
+
+        // create the orbit manipulators
+        manipulator = manipulators.orbit = new osgGlobe.OrbitManipulator(options);
+        manipulator.setDistance(6378137 * 1.2);
+        manipulator.setMaxDistance(6378137 * 2.5);
+        manipulator.setMinDistance(6378137 * 0.95);
+
+        // create the position locked manipulator
+        manipulator = manipulators.locked = new osgGlobe.PositionLockedManipulator(options); 
+
+        // return the default manipulator
+        return manipulators[options.manipulator || 'orbit'];
     }
 };

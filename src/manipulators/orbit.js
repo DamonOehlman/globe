@@ -1,7 +1,7 @@
 /**
-# DeviceMotionOrbiter
+# osgGlobe.OrbitManipulator
 */
-function DeviceMotionOrbiter(options) {
+osgGlobe.OrbitManipulator = function(options) {
     osgGA.Manipulator.call(this);
 
     // ensure we have options
@@ -71,7 +71,7 @@ function DeviceMotionOrbiter(options) {
     this._initDeviceMotion();
 }
 
-DeviceMotionOrbiter.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
+osgGlobe.OrbitManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
     getScaleFromHeight: function(eye) {
         var distFromSurface = eye;
         var scaleOneFromSurface = WGS_84_RADIUS_EQUATOR;

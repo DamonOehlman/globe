@@ -1,7 +1,7 @@
 /**
-# DeviceMotionExplorer
+# osgGlobe.PositionLockedManipulator
 */
-function DeviceMotionExplorer(options) {
+osgGlobe.PositionLockedManipulator = function(options) {
     osgGA.Manipulator.call(this);
 
     // ensure we have options
@@ -68,7 +68,7 @@ function DeviceMotionExplorer(options) {
     this._initDeviceMotion();
 }
 
-DeviceMotionExplorer.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
+osgGlobe.PositionLockedManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
     getScaleFromHeight: function(eye) {
         var distFromSurface = eye;
         var WGS_84_RADIUS_EQUATOR = 6378137.0;
