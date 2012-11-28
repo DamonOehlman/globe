@@ -6,6 +6,9 @@
 
 // req: osg, underscore as _
 
+var WGS_84_RADIUS_EQUATOR = 6378137.0,
+    DEG2RAD = Math.PI / 180;
+
 var _shaders = {
   'country.frag': ['#ifdef GL_ES','precision highp float;','#endif','','uniform vec4 fragColor;','','void main(void) {','    gl_FragColor = fragColor;','}'].join('\n'),
   'country.vert': ['#ifdef GL_ES','precision highp float;','#endif','','attribute vec3 Vertex;','uniform mat4 ModelViewMatrix;','uniform mat4 ProjectionMatrix;','','void main(void) {','    gl_Position = ProjectionMatrix * ModelViewMatrix * vec4(Vertex,1.0);','}'].join('\n'),
@@ -158,8 +161,330 @@ Wave.prototype = {
         this.currentBuffer = (this.currentBuffer + 1)%2;
     }
 };
-function GlobeManipulator(options) {
+/**
+# DeviceMotionOrbiter
+*/
+function DeviceMotionOrbiter(options) {
     osgGA.Manipulator.call(this);
+
+    // ensure we have options
+    options = options || {};
+
+    this.ellipsoidModel = new osg.EllipsoidModel();
+    this.distance = 25;
+    this.target = [ 0,0, 0];
+    this.eye = [ 0, this.distance, 0];
+    this.rotation = [];
+    this.up = [0, 0, 1];
+    this.time = 0.0;
+    this.dx = 0.0;
+    this.dy = 0.0;
+    this.buttonup = true;
+    this.scale = 1.0;
+    this.targetDistance = this.distance;
+    this.currentMode = "rotate";
+
+    this.measureDeltaX = 0;
+    this.measureDeltaY = 0;
+    this.measureClientY = 0;
+    this.measureClientX = 0;
+    this.measureTime = 0;
+    this.direction = 0.0;
+
+    this.height = 0;
+    this.motionWhenRelease = 1.0;
+
+    this.maxDistance = 0;
+    this.minDistance = 0;
+
+    this.contactsIntialDistance =1.0;
+    this.nbContacts = 0;
+    this.contacts = [];
+    this.contactsPosition = [];
+    this.zoomModeUsed = false;
+
+    // initialise the rotation
+    osg.Matrix.makeRotate(-Math.PI/3.0, 1,0,0, this.rotation);
+
+    this.scaleFactor = 10.0;
+    if (options.rotationSpeedFactor !== undefined) {
+        if (options.rotationSpeedFactor !== 0.0) {
+            this.scaleFactor /= options.rotationSpeedFactor;
+        }
+    }
+
+    this.minAutomaticMotion = 0.015;
+    if (options.rotationIdleSpeedFactor !== undefined) {
+        if (options.rotationIdleSpeedFactor !== 0.0) {
+            this.minAutomaticMotion *= options.rotationIdleSpeedFactor;
+        }
+    }
+
+    // create a temporary matrix for calculations
+    this.tmpInv = new Array(16);
+
+    // initialise the motion damping
+    this.motionDamping = options.motionDamping || 0.25;
+
+    // initialise transition properties
+    this.transitionDuration = options.transitionDuration || 2;
+    this.transitionStart = 0;
+
+    // initialise the deviec motion
+    this._initDeviceMotion();
+}
+
+DeviceMotionOrbiter.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
+    getScaleFromHeight: function(eye) {
+        var distFromSurface = eye;
+        var scaleOneFromSurface = WGS_84_RADIUS_EQUATOR;
+        var ratio = distFromSurface/scaleOneFromSurface;
+        // clamp the scale
+        if (ratio > 0.8) {
+            ratio = 0.8;
+        }
+        //osg.log(ratio);
+        var scale = ratio/20.0;
+        return scale;
+    },
+
+    computeRotation: function(dx, dy) {
+        
+        var scale = this.scale,
+            of = [];
+
+        osg.Matrix.makeRotate(dx * scale, 0, 0, 1, of);
+        var r = osg.Matrix.mult(this.rotation, of, []);
+
+        osg.Matrix.makeRotate(dy * scale/2.0, 1,0,0, of);
+        var r2 = osg.Matrix.mult(of,r, []);
+
+        // test that the eye is not too up and not too down to not kill
+        // the rotation matrix
+        var eye = osg.Matrix.transformVec3(osg.Matrix.inverse(r2, []), [0, 0, this.distance], []);
+        /*
+        if (eye[2] > 0.99*this.distance || eye[2] < -0.99*this.distance) {
+            //discard rotation on y
+            this.rotation = r;
+            return;
+        }
+        */
+
+        return this.rotation = r2;
+    },
+
+    goToLocation: function(lat, lng) {
+        var pos3d = [],
+            lookat = [],
+            q = [],
+            qStart;
+
+        // convert lat lng to xyz coord
+        this.ellipsoidModel.convertLatLongHeightToXYZ(
+            lat * DEG2RAD, 
+            lng * DEG2RAD, 
+            WGS_84_RADIUS_EQUATOR,
+            pos3d
+        );
+
+        osg.Matrix.makeLookAt(pos3d, [0,0,0], [0,0,-1], lookat);
+
+        osg.Matrix.getRotate(lookat, q);
+
+        if (this.transitionStart) {
+            qStart = this.getGoToLocationQuaternion();
+            this.rotation = osg.Matrix.makeRotateFromQuat(osg.Quat.conj(qStart));
+        }
+
+        this.targetRotation = q;
+        this.transitionStart = Date.now();
+    },
+
+    setDistance: function(d) {
+        this.distance = d;
+        this.targetDistance = this.distance;
+    },
+    setMaxDistance: function(d) {
+        this.maxDistance =  d;
+    },
+    setMinDistance: function(d) {
+        this.minDistance =  d;
+    },
+
+    getHeight: function() {
+        var h, lat, lng, llh = [];
+
+        this.ellipsoidModel.convertXYZToLatLongHeight(this.eye[0], this.eye[1], this.eye[2], llh);
+        return llh[2];
+        //osg.log("height " + llh[2] + " distance " + this.distance);
+    },
+
+    mousewheel: function(ev, intDelta, deltaX, deltaY) {
+        if (intDelta > 0){
+                if (this.distanceDecrease) {
+                    this.distanceDecrease();
+                }
+        }
+        else if (intDelta < 0){
+                if (this.distanceIncrease) {
+                    this.distanceIncrease();
+                }
+        }
+    },
+
+    distanceIncrease: function() {
+        var h = this.height;
+        var currentTarget = this.targetDistance;
+        var newTarget = currentTarget + h/10.0;
+        if (this.maxDistance > 0) {
+            if (newTarget > this.maxDistance) {
+                newTarget = this.maxDistance;
+            }
+        }
+        this.distance = currentTarget;
+        this.targetDistance = newTarget;
+        this.timeMotion = (new Date()).getTime();
+    },
+    distanceDecrease: function() {
+        var h = this.height;
+        var currentTarget = this.targetDistance;
+        var newTarget = currentTarget - h/10.0;
+        if (this.minDistance > 0) {
+            if (newTarget < this.minDistance) {
+                newTarget = this.minDistance;
+            }
+        }
+        this.distance = currentTarget;
+        this.targetDistance = newTarget;
+        this.timeMotion = (new Date()).getTime();
+    },
+    
+    pushButton: function() {
+        this.dx = this.dy = 0;
+        this.buttonup = false;
+
+        var hit = this.getIntersection();
+        this.pushHit = hit;
+    },
+
+    getIntersection: function() {
+        var hits = this.view.computeIntersections(this.clientX, this.clientY, 1);
+        var l = hits.length;
+        if (l === 0 ) {
+            return undefined;
+        }
+        hits.sort(function(a,b) {
+            return a.ratio - b.ratio;
+        });
+
+        // use the first hit
+        var hit = hits[0].nodepath;
+        var l2 = hit.length;
+        var itemSelected;
+        var itemID;
+        while (l2-- >= 0) {
+            if (hit[l2].itemToIntersect !== undefined) {
+                itemID = hit[l2].itemID;
+                //itemSelected = hit[l2].children[0].getUpdateCallback();
+                itemSelected = hit[l2];
+                break;
+            }
+        }
+        return { 'itemID': itemID, 
+                 'item': itemSelected };
+    },
+
+    getInverseMatrix: function () {
+        var eye = [],
+            distance = this.distance,
+            target = this.target,
+            tmpInv = this.tmpInv,
+            success,
+            eye,
+            inv;
+
+        if (this.transitionStart) {
+            qCurrent = this._calcLocationQuarternion();
+
+            eve = this.eye = osg.Matrix.transformVec3(osg.Matrix.makeRotateFromQuat(qCurrent, []), [0, 0, distance], eye);
+            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target, eye, []), target, [0,0,1], []);
+        }
+        else {
+            success = osg.Matrix.inverse(this.computeRotation(this.dx, this.dy), tmpInv);
+            eye = this.eye = osg.Matrix.transformVec3(tmpInv, [0, 0, distance], eye);
+
+            // calculate the inverse matrix
+            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target,eye, []), target, [0,0,1], []);
+        }
+
+        this.height = this.getHeight();
+        // this.scale = this.getScaleFromHeight(this.height);
+
+        return inv;
+    },
+
+    /**
+    ## _calcLocationQuarternion
+    */
+    _calcLocationQuarternion: function() {
+        var target = this.target,
+            distance = this.distance,
+            q0 = osg.Matrix.getRotate(this.rotation),
+            q1 = this.targetRotation,
+            elapsed = (Date.now() - this.transitionStart) / 1000,
+            qCurrent = [];
+
+        if (elapsed > this.transitionDuration) {
+            elapsed = 1;
+            this.transitionStart = 0;
+            osg.Matrix.makeRotateFromQuat(q1, this.rotation);
+
+            this.dx = 0;
+            this.dy = 0;
+        } 
+        else {
+            elapsed = osgAnimation.EaseOutCubic(elapsed / this.transitionDuration);
+        }
+
+        qCurrent = osg.Quat.slerp(elapsed, q0, q1, qCurrent);
+        osg.Quat.conj(qCurrent, qCurrent);
+
+        return qCurrent;
+    },
+
+
+    /**
+    ## _handleMotion
+
+    This is the event handler for the `devicemotion` event.  The handler is designed to be
+    invoked bound to the manipulator scope.
+    */
+    _handleMotion: function(evt) {
+        var accel = evt.accelerationIncludingGravity;
+
+        // update the delta change
+        this.dx = (accel.x / 180) * this.motionDamping;
+        this.dy = (accel.y / 180) * this.motionDamping;
+    },
+
+    /**
+    ## _initDeviceMotion
+
+    This method is used to listen for device motion events and apply the appropriate updates on 
+    on the globe.
+    */
+    _initDeviceMotion: function() {
+        window.addEventListener('devicemotion', this._handleMotion.bind(this), false);
+    }
+});
+/**
+# DeviceMotionExplorer
+*/
+function DeviceMotionExplorer(options) {
+    osgGA.Manipulator.call(this);
+
+    // ensure we have options
+    options = options || {};
 
     this.ellipsoidModel = new osg.EllipsoidModel();
     this.distance = 25;
@@ -199,19 +524,309 @@ function GlobeManipulator(options) {
     osg.Matrix.makeRotate(-Math.PI/3.0, 1,0,0, this.rotation);
 
     this.scaleFactor = 10.0;
-    if (options !== undefined && options.rotationSpeedFactor !== undefined) {
+    if (options.rotationSpeedFactor !== undefined) {
         if (options.rotationSpeedFactor !== 0.0) {
             this.scaleFactor /= options.rotationSpeedFactor;
         }
     }
 
     this.minAutomaticMotion = 0.015;
-    if (options !== undefined && options.rotationIdleSpeedFactor !== undefined) {
+    if (options.rotationIdleSpeedFactor !== undefined) {
         if (options.rotationIdleSpeedFactor !== 0.0) {
             this.minAutomaticMotion *= options.rotationIdleSpeedFactor;
         }
     }
 
+    // create a temporary matrix for calculations
+    this.tmpInv = new Array(16);
+
+    // initialise the motion damping
+    this.motionDamping = options.motionDamping || 0.25;
+
+    // initialise the deviec motion
+    this._initDeviceMotion();
+}
+
+DeviceMotionExplorer.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
+    getScaleFromHeight: function(eye) {
+        var distFromSurface = eye;
+        var WGS_84_RADIUS_EQUATOR = 6378137.0;
+        var scaleOneFromSurface = WGS_84_RADIUS_EQUATOR;
+        var ratio = distFromSurface/scaleOneFromSurface;
+        // clamp the scale
+        if (ratio > 0.8) {
+            ratio = 0.8;
+        }
+        //osg.log(ratio);
+        var scale = ratio/20.0;
+        return scale;
+    },
+
+    computeRotation: function(dx, dy) {
+        
+        var scale = this.scale,
+            of = [];
+
+        osg.Matrix.makeRotate(dx * scale, 0, 0, 1, of);
+        var r = osg.Matrix.mult(this.rotation, of, []);
+
+        osg.Matrix.makeRotate(dy * scale/2.0, 1,0,0, of);
+        var r2 = osg.Matrix.mult(of,r, []);
+
+        // test that the eye is not too up and not too down to not kill
+        // the rotation matrix
+        var eye = osg.Matrix.transformVec3(osg.Matrix.inverse(r2, []), [0, 0, this.distance], []);
+        /*
+        if (eye[2] > 0.99*this.distance || eye[2] < -0.99*this.distance) {
+            //discard rotation on y
+            this.rotation = r;
+            return;
+        }
+        */
+
+        return this.rotation = r2;
+    },
+
+    
+    goToLocation: function(lat, lng) {
+        // already running switch to new location
+        var pos3d = this.ellipsoidModel.convertLatLongHeightToXYZ(lat*Math.PI/180.0, lng*Math.PI/180.0);
+        var lookat = osg.Matrix.makeLookAt(pos3d, [0,0,0], [0,0,-1], []);
+        var q = osg.Matrix.getRotate(lookat, []);
+
+        if (this.goToLocationRunning) {
+            var qStart = this.getGoToLocationQuaternion();
+            this.rotation = osg.Matrix.makeRotateFromQuat(osg.Quat.conj(qStart));
+        }
+        this.targetRotation = q;
+        this.goToLocationTime = (new Date()).getTime();
+        this.goToLocationRunning = true;
+    },
+
+    setDistance: function(d) {
+        this.distance = d;
+        this.targetDistance = this.distance;
+    },
+    setMaxDistance: function(d) {
+        this.maxDistance =  d;
+    },
+    setMinDistance: function(d) {
+        this.minDistance =  d;
+    },
+
+    getHeight: function() {
+        var h, lat, lng, llh = [];
+
+        this.ellipsoidModel.convertXYZToLatLongHeight(this.eye[0], this.eye[1], this.eye[2], llh);
+        return llh[2];
+        //osg.log("height " + llh[2] + " distance " + this.distance);
+    },
+
+    mousewheel: function(ev, intDelta, deltaX, deltaY) {
+        if (intDelta > 0){
+                if (this.distanceDecrease) {
+                    this.distanceDecrease();
+                }
+        }
+        else if (intDelta < 0){
+                if (this.distanceIncrease) {
+                    this.distanceIncrease();
+                }
+        }
+    },
+
+    distanceIncrease: function() {
+        var h = this.height;
+        var currentTarget = this.targetDistance;
+        var newTarget = currentTarget + h/10.0;
+        if (this.maxDistance > 0) {
+            if (newTarget > this.maxDistance) {
+                newTarget = this.maxDistance;
+            }
+        }
+        this.distance = currentTarget;
+        this.targetDistance = newTarget;
+        this.timeMotion = (new Date()).getTime();
+    },
+    distanceDecrease: function() {
+        var h = this.height;
+        var currentTarget = this.targetDistance;
+        var newTarget = currentTarget - h/10.0;
+        if (this.minDistance > 0) {
+            if (newTarget < this.minDistance) {
+                newTarget = this.minDistance;
+            }
+        }
+        this.distance = currentTarget;
+        this.targetDistance = newTarget;
+        this.timeMotion = (new Date()).getTime();
+    },
+    
+    pushButton: function() {
+        this.dx = this.dy = 0;
+        this.buttonup = false;
+
+        var hit = this.getIntersection();
+        this.pushHit = hit;
+    },
+
+    getIntersection: function() {
+        var hits = this.view.computeIntersections(this.clientX, this.clientY, 1);
+        var l = hits.length;
+        if (l === 0 ) {
+            return undefined;
+        }
+        hits.sort(function(a,b) {
+            return a.ratio - b.ratio;
+        });
+
+        // use the first hit
+        var hit = hits[0].nodepath;
+        var l2 = hit.length;
+        var itemSelected;
+        var itemID;
+        while (l2-- >= 0) {
+            if (hit[l2].itemToIntersect !== undefined) {
+                itemID = hit[l2].itemID;
+                //itemSelected = hit[l2].children[0].getUpdateCallback();
+                itemSelected = hit[l2];
+                break;
+            }
+        }
+        return { 'itemID': itemID, 
+                 'item': itemSelected };
+    },
+
+    getGoToLocationQuaternion: function() {
+        var goToLocationDuration = 2.0;
+        target = this.target;
+        distance = this.distance;
+
+        var q0 = osg.Matrix.getRotate(this.rotation);
+        var q1 = this.targetRotation;
+
+        var t = ((new Date()).getTime() - this.goToLocationTime)/1000.0;
+        if (t > goToLocationDuration) {
+            t = 1.0;
+            this.goToLocationRunning = false;
+            this.rotation = osg.Matrix.makeRotateFromQuat(q1);
+            this.dx = 0;
+            this.dy = 0;
+        } else {
+            t = osgAnimation.EaseOutCubic(t/goToLocationDuration);
+        }
+        var qCurrent = osg.Quat.slerp(t, q0, q1);
+        osg.Quat.conj(qCurrent, qCurrent);
+        return qCurrent;
+    },
+
+    getInverseMatrix: function () {
+        var distance = this.distance,
+            target = this.target,
+            tmpInv = this.tmpInv,
+            success = osg.Matrix.inverse(this.computeRotation(this.dx, this.dy), tmpInv),
+            eye = this.eye = osg.Matrix.transformVec3(tmpInv, [0, 0, distance], []),
+
+            // calculate the inverse matrix
+            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target,eye, []), target, [0,0,1], []);
+
+        this.height = this.getHeight();
+        // this.scale = this.getScaleFromHeight(this.height);
+
+        return inv;
+    },
+
+    /**
+    ## _handleMotion
+
+    This is the event handler for the `devicemotion` event.  The handler is designed to be
+    invoked bound to the manipulator scope.
+    */
+    _handleMotion: function(evt) {
+        var accel = evt.accelerationIncludingGravity;
+
+        // update the delta change
+        this.dx = (accel.x / 180) * this.motionDamping;
+        this.dy = (accel.y / 180) * this.motionDamping;
+    },
+
+    /**
+    ## _initDeviceMotion
+
+    This method is used to listen for device motion events and apply the appropriate updates on 
+    on the globe.
+    */
+    _initDeviceMotion: function() {
+        window.addEventListener('devicemotion', this._handleMotion.bind(this), false);
+    }
+});
+function GlobeManipulator(options) {
+    osgGA.Manipulator.call(this);
+
+    // ensure we have options
+    options = options || {};
+
+    // initialise the default state for capturing device motion
+    options.deviceMotion = typeof options.deviceMotion == 'undefined' || options.deviceMotion;
+
+    this.ellipsoidModel = new osg.EllipsoidModel();
+    this.distance = 25;
+    this.target = [ 0,0, 0];
+    this.eye = [ 0, this.distance, 0];
+    this.rotation = [];
+    this.up = [0, 0, 1];
+    this.time = 0.0;
+    this.dx = 0.0;
+    this.dy = 0.0;
+    this.buttonup = true;
+    this.scale = 1.0;
+    this.targetDistance = this.distance;
+    this.currentMode = "rotate";
+
+    this.measureDeltaX = 0;
+    this.measureDeltaY = 0;
+    this.measureClientY = 0;
+    this.measureClientX = 0;
+    this.measureTime = 0;
+    this.direction = 0.0;
+
+    this.height = 0;
+    this.motionWhenRelease = 1.0;
+
+    this.maxDistance = 0;
+    this.minDistance = 0;
+    this.goToLocationRunning = false;
+
+    this.contactsIntialDistance =1.0;
+    this.nbContacts = 0;
+    this.contacts = [];
+    this.contactsPosition = [];
+    this.zoomModeUsed = false;
+
+    // initialise the rotation
+    osg.Matrix.makeRotate(-Math.PI/3.0, 1,0,0, this.rotation);
+
+    this.scaleFactor = 10.0;
+    if (options.rotationSpeedFactor !== undefined) {
+        if (options.rotationSpeedFactor !== 0.0) {
+            this.scaleFactor /= options.rotationSpeedFactor;
+        }
+    }
+
+    this.minAutomaticMotion = 0.015;
+    if (options.rotationIdleSpeedFactor !== undefined) {
+        if (options.rotationIdleSpeedFactor !== 0.0) {
+            this.minAutomaticMotion *= options.rotationIdleSpeedFactor;
+        }
+    }
+
+    // initialise the motion damping
+    this.motionDamping = options.motionDamping || 0.1;
+
+    // if we are using device motion, then initialize it now
+    if (options.deviceMotion) {
+        this._initDeviceMotion();
+    }
 }
 
 GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
@@ -229,7 +844,6 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
 
     getScaleFromHeight: function(eye) {
         var distFromSurface = eye;
-        var WGS_84_RADIUS_EQUATOR = 6378137.0;
         var scaleOneFromSurface = WGS_84_RADIUS_EQUATOR;
         var ratio = distFromSurface/scaleOneFromSurface;
         // clamp the scale
@@ -263,17 +877,55 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
         this.rotation = r2;
     },
 
+    getGoToLocationQuaternion: function() {
+        var goToLocationDuration = 2.0,
+            target = this.target,
+            distance = this.distance,
+            q0 = osg.Matrix.getRotate(this.rotation),
+            q1 = this.targetRotation,
+            t = ((new Date()).getTime() - this.goToLocationTime)/1000.0,
+            qCurrent = [];
+
+
+        if (t > goToLocationDuration) {
+            t = 1.0;
+            this.goToLocationRunning = false;
+            osg.Matrix.makeRotateFromQuat(q1, this.rotation);
+            this.dx = 0;
+            this.dy = 0;
+        } else {
+            t = osgAnimation.EaseOutCubic(t/goToLocationDuration);
+        }
+
+        qCurrent = osg.Quat.slerp(t, q0, q1, qCurrent);
+        osg.Quat.conj(qCurrent, qCurrent);
+
+        return qCurrent;
+    },
     
     goToLocation: function(lat, lng) {
-        // already running switch to new location
-        var pos3d = this.ellipsoidModel.convertLatLongHeightToXYZ(lat*Math.PI/180.0, lng*Math.PI/180.0);
-        var lookat = osg.Matrix.makeLookAt(pos3d, [0,0,0], [0,0,-1], []);
-        var q = osg.Matrix.getRotate(lookat, []);
+        var pos3d = [],
+            lookat = [],
+            q = [],
+            qStart;
+
+        // convert lat lng to xyz coord
+        this.ellipsoidModel.convertLatLongHeightToXYZ(
+            lat * Math.PI/180.0, 
+            lng * Math.PI/180.0, 
+            WGS_84_RADIUS_EQUATOR,
+            pos3d
+        );
+
+        osg.Matrix.makeLookAt(pos3d, [0,0,0], [0,0,-1], lookat);
+
+        osg.Matrix.getRotate(lookat, q);
 
         if (this.goToLocationRunning) {
-            var qStart = this.getGoToLocationQuaternion();
+            qStart = this.getGoToLocationQuaternion();
             this.rotation = osg.Matrix.makeRotateFromQuat(osg.Quat.conj(qStart));
         }
+
         this.targetRotation = q;
         this.goToLocationTime = (new Date()).getTime();
         this.goToLocationRunning = true;
@@ -281,7 +933,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
         this.disableAutomaticMotion(4.0);
     },
 
-    update: function(dx, dy) {
+    updateDelta: function(dx, dy) {
         if (dx > 0) {
             this.direction = 1.0;
         } else if (dx < 0) {
@@ -296,7 +948,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
     },
 
     dblclick: function() {
-        //this.goToLocation(-3.948104, -54.045366);
+        this.goToLocation(-3.948104, -54.045366);
         return true;
     },
     updateWithDelay: function() {
@@ -341,7 +993,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
             window.setTimeout(function() {
                 if (Math.abs(that.dx) + Math.abs(that.dy) === 0.0) {
                     that.motionWhenRelease = 1.0;
-                    that.update(min+0.0001,0);
+                    that.updateDelta(min+0.0001,0);
                 }
                 delete that.timeout;
             }, duration * 1000);
@@ -398,7 +1050,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
         this.lastDeltaX = deltaX;
         this.lastDeltaY = deltaY;
 
-        this.update(deltaX, deltaY);
+        this.updateDelta(deltaX, deltaY);
     },
     mousedown: function(ev) {
         var pos = this.getPositionRelativeToCanvas(ev);
@@ -408,7 +1060,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
         this.measureTime = (new Date()).getTime()/1000.0;
     },
 
-    touchDown: function(ev) {
+    touchstart: function(ev) {
         if (this.nbContacts >= 2 || (this.nbContacts < 2 && this.zoomModeUsed === true)) {
             return;
         }
@@ -432,7 +1084,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
             //osg.log("2 contacts " + this.contactsIntialDistance);
             }
     },
-    touchUp: function(ev) {
+    touchend: function(ev) {
         if (this.zoomModeUsed === false && this.nbContacts === 1) {
             //osg.log("use a mouse up ");
             this.mouseup(ev);
@@ -442,7 +1094,7 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
             this.zoomModeUsed = false;
         }
     },
-    touchMove: function(ev) {
+    touchmove: function(ev) {
         if (this.nbContacts === 2) {
             // zoom mode
             this.zoomModeUsed = true;
@@ -583,49 +1235,20 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
                  'item': itemSelected };
     },
 
-    getGoToLocationQuaternion: function() {
-        var goToLocationDuration = 2.0;
-        target = this.target;
-        distance = this.distance;
-
-        var q0 = osg.Matrix.getRotate(this.rotation);
-        var q1 = this.targetRotation;
-
-        var t = ((new Date()).getTime() - this.goToLocationTime)/1000.0;
-        if (t > goToLocationDuration) {
-            t = 1.0;
-            this.goToLocationRunning = false;
-            this.rotation = osg.Matrix.makeRotateFromQuat(q1);
-            this.dx = 0;
-            this.dy = 0;
-        } else {
-            t = osgAnimation.EaseOutCubic(t/goToLocationDuration);
-        }
-        var qCurrent = osg.Quat.slerp(t, q0, q1);
-        osg.Quat.conj(qCurrent, qCurrent);
-        return qCurrent;
-    },
-
     getInverseMatrix: function () {
-        var inv;
-        var target;
-        var distance;
-        var eye;
+        var inv,
+            target = this.target,
+            distance = this.distance,
+            qCurrent;
 
         if (this.goToLocationRunning === true ) {
-            distance = this.distance;
-            target = this.target;
-            var qCurrent = this.getGoToLocationQuaternion();
-            eye = osg.Matrix.transformVec3(osg.Matrix.makeRotateFromQuat(qCurrent), [0, 0, distance]);
-            this.eye = eye;
-            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target,eye), target, [0,0,1], []);
+            qCurrent = this.getGoToLocationQuaternion();
+            osg.Matrix.transformVec3(osg.Matrix.makeRotateFromQuat(qCurrent, []), [0, 0, distance], this.eye);
+            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target, this.eye, []), target, [0,0,1], []);
 
         } else {
 
             this.updateWithDelay();
-
-            target = this.target;
-            distance = this.distance;
 
             if (this.timeMotion !== undefined) { // we have a camera motion event
                 var dt = ((new Date()).getTime() - this.timeMotion)/1000.0;
@@ -658,17 +1281,41 @@ GlobeManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
                 osg.Matrix._mytmp = tmpInv;
             }
             var success = osg.Matrix.inverse(this.rotation, tmpInv);
-            eye = osg.Matrix.transformVec3(tmpInv, [0, 0, distance], []);
-            this.eye = eye;
-            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target,eye, []), target, [0,0,1], []);
+            osg.Matrix.transformVec3(tmpInv, [0, 0, distance], this.eye);
+            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target, this.eye, []), target, [0,0,1], []);
         }
 
         this.height = this.getHeight();
         this.scale = this.getScaleFromHeight(this.height);
 //        osg.log("height " + this.height + " scale " + this.height/6378137.0);
         return inv;
-    }
+    },
 
+    /**
+    ## _handleMotion
+
+    This is the event handler for the `devicemotion` event.  The handler is designed to be
+    invoked bound to the manipulator scope.
+    */
+    _handleMotion: function(evt) {
+        var accel = evt.accelerationIncludingGravity;
+
+        this.disableAutomaticMotion(0.5);
+        this.updateDelta(
+            (accel.x / 180) * this.motionDamping, 
+            (accel.y / 180) * this.motionDamping
+        );
+    },
+
+    /**
+    ## _initDeviceMotion
+
+    This method is used to listen for device motion events and apply the appropriate updates on 
+    on the globe.
+    */
+    _initDeviceMotion: function() {
+        window.addEventListener('devicemotion', this._handleMotion.bind(this), false);
+    }
 });
 
 function Globe(canvas, options) {
@@ -698,21 +1345,26 @@ function Globe(canvas, options) {
     this.wave = options.wave && (new Wave());
 
     // initialise the viewer manipulator
-    manipulator = new osgGA.OrbitManipulator(options);
-    manipulator.setDistance(2.5*6378137);
-    manipulator.setMaxDistance(2.5*6378137);
-    manipulator.setMinDistance(6378137);
+    // manipulator = new GlobeManipulator(options); // new osgGA.OrbitManipulator(options);
+    manipulator = new DeviceMotionOrbiter(options);
+    manipulator.setDistance(6378137 * 1.2);
+    manipulator.setMaxDistance(6378137 * 2.5);
+    manipulator.setMinDistance(6378137 * 0.95);
 
     // initialise the viewer
     viewer = this.viewer = new osgViewer.Viewer(canvas);
     viewer.init();
-    viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
+    viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(30, ratio, 1000.0, 100000000.0, []));
     viewer.setupManipulator(manipulator);
 
     // create the scene
     this.sceneData = this.createScene();
     viewer.setSceneData(this.sceneData.root);
     viewer.run();
+
+    setTimeout(function() {
+        manipulator.goToLocation(-27, 153);
+    }, 500);
 
     /*
     this.viewer.run = function() {
@@ -965,14 +1617,10 @@ Globe.prototype = {
         countryScale.addChild(country);
 
         // add the scene children
-        scene.add(backSphere, frontSphere, countryScale, items);
-
-        /*
         scene.addChild(backSphere);
         scene.addChild(frontSphere);
         scene.addChild(countryScale);
         scene.addChild(items);
-        */
 
         items.getOrCreateStateSet().setAttributeAndMode(new osg.Depth('DISABLE'));
         items.getOrCreateStateSet().setAttributeAndMode(new osg.BlendFunc('SRC_ALPHA', 'ONE_MINUS_SRC_ALPHA'));

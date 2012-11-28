@@ -6,11 +6,16 @@
 
 // req: osg, underscore as _
 
+var WGS_84_RADIUS_EQUATOR = 6378137.0,
+    DEG2RAD = Math.PI / 180;
+
 //=collate shaders { "transform": "array" }
 
 //= fns/hex2num
 //= types/wave
-//= types/globe-manipulator
+//= manipulators/devicemotion-orbiter
+//= manipulators/devicemotion-explorer
+//= manipulators/globe-manipulator.original.js
 
 function Globe(canvas, options) {
     var w, h, ratio, viewer, manipulator;
@@ -39,21 +44,26 @@ function Globe(canvas, options) {
     this.wave = options.wave && (new Wave());
 
     // initialise the viewer manipulator
-    manipulator = new osgGA.OrbitManipulator(options);
-    manipulator.setDistance(2.5*6378137);
-    manipulator.setMaxDistance(2.5*6378137);
-    manipulator.setMinDistance(6378137);
+    // manipulator = new GlobeManipulator(options); // new osgGA.OrbitManipulator(options);
+    manipulator = new DeviceMotionOrbiter(options);
+    manipulator.setDistance(6378137 * 1.2);
+    manipulator.setMaxDistance(6378137 * 2.5);
+    manipulator.setMinDistance(6378137 * 0.95);
 
     // initialise the viewer
     viewer = this.viewer = new osgViewer.Viewer(canvas);
     viewer.init();
-    viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(60, ratio, 1000.0, 100000000.0, []));
+    viewer.getCamera().setProjectionMatrix(osg.Matrix.makePerspective(30, ratio, 1000.0, 100000000.0, []));
     viewer.setupManipulator(manipulator);
 
     // create the scene
     this.sceneData = this.createScene();
     viewer.setSceneData(this.sceneData.root);
     viewer.run();
+
+    setTimeout(function() {
+        manipulator.goToLocation(-27, 153);
+    }, 500);
 
     /*
     this.viewer.run = function() {
@@ -306,14 +316,10 @@ Globe.prototype = {
         countryScale.addChild(country);
 
         // add the scene children
-        scene.add(backSphere, frontSphere, countryScale, items);
-
-        /*
         scene.addChild(backSphere);
         scene.addChild(frontSphere);
         scene.addChild(countryScale);
         scene.addChild(items);
-        */
 
         items.getOrCreateStateSet().setAttributeAndMode(new osg.Depth('DISABLE'));
         items.getOrCreateStateSet().setAttributeAndMode(new osg.BlendFunc('SRC_ALPHA', 'ONE_MINUS_SRC_ALPHA'));

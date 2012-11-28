@@ -15,7 +15,7 @@
     "url": "git://github.com/cedricpinson/globe.git/issues"
   },
   "scripts": {
-    "build": "rig src globe.js > globe.js"
+    "build": "rig src/globe.js > globe.js"
   },
   "contributors": [
     "Damon Oehlman <damon.oehlman@sidelab.com>"
