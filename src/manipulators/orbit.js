@@ -61,7 +61,8 @@ osgGlobe.OrbitManipulator = function(options) {
     this.tmpInv = new Array(16);
 
     // initialise the motion damping
-    this.motionDamping = options.motionDamping || 0.25;
+    this.motionDampingX = options.motionDampingX || 1;
+    this.motionDampingY = options.motionDampingY || 2;
 
     // initialise transition properties
     this.transitionDuration = options.transitionDuration || 2;
@@ -300,8 +301,8 @@ osgGlobe.OrbitManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.protot
         var accel = evt.accelerationIncludingGravity;
 
         // update the delta change
-        this.dx = (accel.x / 180) * this.motionDamping;
-        this.dy = (accel.y / 180) * this.motionDamping;
+        this.dx = (accel.x / 180) * this.motionDampingX;
+        this.dy = (accel.y / 180) * this.motionDampingY;
     },
 
     /**
