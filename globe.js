@@ -227,7 +227,8 @@ osgGlobe.OrbitManipulator = function(options) {
     this.tmpInv = new Array(16);
 
     // initialise the motion damping
-    this.motionDamping = options.motionDamping || 0.25;
+    this.motionDampingX = options.motionDampingX || 1;
+    this.motionDampingY = options.motionDampingY || 2;
 
     // initialise transition properties
     this.transitionDuration = options.transitionDuration || 2;
@@ -466,8 +467,8 @@ osgGlobe.OrbitManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.protot
         var accel = evt.accelerationIncludingGravity;
 
         // update the delta change
-        this.dx = (accel.x / 180) * this.motionDamping;
-        this.dy = (accel.y / 180) * this.motionDamping;
+        this.dx = (accel.x / 180) * this.motionDampingX;
+        this.dy = (accel.y / 180) * this.motionDampingY;
     },
 
     /**
@@ -481,7 +482,7 @@ osgGlobe.OrbitManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.protot
     }
 });
 /**
-# osgGlobe.PositionLockedManipulator
+# osgGlobe.OrbitManipulator
 */
 osgGlobe.PositionLockedManipulator = function(options) {
     osgGA.Manipulator.call(this);
@@ -500,8 +501,6 @@ osgGlobe.PositionLockedManipulator = function(options) {
     this.dy = 0.0;
     this.buttonup = true;
     this.scale = 1.0;
-    this.targetDistance = this.distance;
-    this.currentMode = "rotate";
 
     this.measureDeltaX = 0;
     this.measureDeltaY = 0;
@@ -515,7 +514,6 @@ osgGlobe.PositionLockedManipulator = function(options) {
 
     this.maxDistance = 0;
     this.minDistance = 0;
-    this.goToLocationRunning = false;
 
     this.contactsIntialDistance =1.0;
     this.nbContacts = 0;
@@ -544,27 +542,17 @@ osgGlobe.PositionLockedManipulator = function(options) {
     this.tmpInv = new Array(16);
 
     // initialise the motion damping
-    this.motionDamping = options.motionDamping || 0.25;
+    this.motionDampingX = options.motionDampingX || 1;
+    this.motionDampingY = options.motionDampingY || 2;
+
+    // if we have a target position
+    this.targetPos = undefined;
 
     // initialise the deviec motion
     this._initDeviceMotion();
 }
 
 osgGlobe.PositionLockedManipulator.prototype = osg.objectInehrit(osgGA.Manipulator.prototype, {
-    getScaleFromHeight: function(eye) {
-        var distFromSurface = eye;
-        var WGS_84_RADIUS_EQUATOR = 6378137.0;
-        var scaleOneFromSurface = WGS_84_RADIUS_EQUATOR;
-        var ratio = distFromSurface/scaleOneFromSurface;
-        // clamp the scale
-        if (ratio > 0.8) {
-            ratio = 0.8;
-        }
-        //osg.log(ratio);
-        var scale = ratio/20.0;
-        return scale;
-    },
-
     computeRotation: function(dx, dy) {
         
         var scale = this.scale,
@@ -590,87 +578,20 @@ osgGlobe.PositionLockedManipulator.prototype = osg.objectInehrit(osgGA.Manipulat
         return this.rotation = r2;
     },
 
-    
     goToLocation: function(lat, lng) {
-        // already running switch to new location
-        var pos3d = this.ellipsoidModel.convertLatLongHeightToXYZ(lat*Math.PI/180.0, lng*Math.PI/180.0);
-        var lookat = osg.Matrix.makeLookAt(pos3d, [0,0,0], [0,0,-1], []);
-        var q = osg.Matrix.getRotate(lookat, []);
+        // initialise the antipode
+        this.targetPos = {
+            lat: lat > 180 ? lat - 180 : lat + 180,
+            lng: -lng
+        };
 
-        if (this.goToLocationRunning) {
-            var qStart = this.getGoToLocationQuaternion();
-            this.rotation = osg.Matrix.makeRotateFromQuat(osg.Quat.conj(qStart));
-        }
-        this.targetRotation = q;
-        this.goToLocationTime = (new Date()).getTime();
-        this.goToLocationRunning = true;
-    },
-
-    setDistance: function(d) {
-        this.distance = d;
-        this.targetDistance = this.distance;
-    },
-    setMaxDistance: function(d) {
-        this.maxDistance =  d;
-    },
-    setMinDistance: function(d) {
-        this.minDistance =  d;
-    },
-
-    getHeight: function() {
-        var h, lat, lng, llh = [];
-
-        this.ellipsoidModel.convertXYZToLatLongHeight(this.eye[0], this.eye[1], this.eye[2], llh);
-        return llh[2];
-        //osg.log("height " + llh[2] + " distance " + this.distance);
-    },
-
-    mousewheel: function(ev, intDelta, deltaX, deltaY) {
-        if (intDelta > 0){
-                if (this.distanceDecrease) {
-                    this.distanceDecrease();
-                }
-        }
-        else if (intDelta < 0){
-                if (this.distanceIncrease) {
-                    this.distanceIncrease();
-                }
-        }
-    },
-
-    distanceIncrease: function() {
-        var h = this.height;
-        var currentTarget = this.targetDistance;
-        var newTarget = currentTarget + h/10.0;
-        if (this.maxDistance > 0) {
-            if (newTarget > this.maxDistance) {
-                newTarget = this.maxDistance;
-            }
-        }
-        this.distance = currentTarget;
-        this.targetDistance = newTarget;
-        this.timeMotion = (new Date()).getTime();
-    },
-    distanceDecrease: function() {
-        var h = this.height;
-        var currentTarget = this.targetDistance;
-        var newTarget = currentTarget - h/10.0;
-        if (this.minDistance > 0) {
-            if (newTarget < this.minDistance) {
-                newTarget = this.minDistance;
-            }
-        }
-        this.distance = currentTarget;
-        this.targetDistance = newTarget;
-        this.timeMotion = (new Date()).getTime();
-    },
-    
-    pushButton: function() {
-        this.dx = this.dy = 0;
-        this.buttonup = false;
-
-        var hit = this.getIntersection();
-        this.pushHit = hit;
+        // initialise the base location
+        this.eye = this.ellipsoidModel.convertLatLongHeightToXYZ(
+            lat * DEG2RAD, 
+            lng * DEG2RAD, 
+            WGS_84_RADIUS_EQUATOR,
+            []
+        );
     },
 
     getIntersection: function() {
@@ -700,43 +621,19 @@ osgGlobe.PositionLockedManipulator.prototype = osg.objectInehrit(osgGA.Manipulat
                  'item': itemSelected };
     },
 
-    getGoToLocationQuaternion: function() {
-        var goToLocationDuration = 2.0;
-        target = this.target;
-        distance = this.distance;
-
-        var q0 = osg.Matrix.getRotate(this.rotation);
-        var q1 = this.targetRotation;
-
-        var t = ((new Date()).getTime() - this.goToLocationTime)/1000.0;
-        if (t > goToLocationDuration) {
-            t = 1.0;
-            this.goToLocationRunning = false;
-            this.rotation = osg.Matrix.makeRotateFromQuat(q1);
-            this.dx = 0;
-            this.dy = 0;
-        } else {
-            t = osgAnimation.EaseOutCubic(t/goToLocationDuration);
-        }
-        var qCurrent = osg.Quat.slerp(t, q0, q1);
-        osg.Quat.conj(qCurrent, qCurrent);
-        return qCurrent;
-    },
-
     getInverseMatrix: function () {
-        var distance = this.distance,
-            target = this.target,
-            tmpInv = this.tmpInv,
-            success = osg.Matrix.inverse(this.computeRotation(this.dx, this.dy), tmpInv),
-            eye = this.eye = osg.Matrix.transformVec3(tmpInv, [0, 0, distance], []),
+        var eye = this.eye,
+            target;
 
-            // calculate the inverse matrix
-            inv = osg.Matrix.makeLookAt(osg.Vec3.add(target,eye, []), target, [0,0,1], []);
+        // update the target based on the antipode position
+        target = this.target =         osg.Matrix.makeLookAt(pos3d, [0,0,0], [0,0,-1], lookat);
 
-        this.height = this.getHeight();
-        // this.scale = this.getScaleFromHeight(this.height);
 
-        return inv;
+        // success = osg.Matrix.inverse(this.computeRotation(this.dx, this.dy), tmpInv);
+        // eye = this.eye = osg.Matrix.transformVec3(tmpInv, [0, 0, distance], eye);
+
+        // calculate the inverse matrix
+        return osg.Matrix.makeLookAt(osg.Vec3.add(target, eye, []), target, [0,0,1], []);
     },
 
     /**
@@ -748,9 +645,13 @@ osgGlobe.PositionLockedManipulator.prototype = osg.objectInehrit(osgGA.Manipulat
     _handleMotion: function(evt) {
         var accel = evt.accelerationIncludingGravity;
 
-        // update the delta change
-        this.dx = (accel.x / 180) * this.motionDamping;
-        this.dy = (accel.y / 180) * this.motionDamping;
+        // if we have an antipode specified then update
+        if (this.antipode) {
+            this.antipode.lat += (accel.y / 180) * this.motionDampingY;
+            this.antipode.lng += (accel.x / 180) * this.motionDampingX;
+
+            // clamp
+        }
     },
 
     /**
@@ -1724,8 +1625,8 @@ osgGlobe.Globe.prototype = {
 
         // create the orbit manipulators
         manipulator = manipulators.orbit = new osgGlobe.OrbitManipulator(options);
-        manipulator.setDistance(6378137 * 1.2);
-        manipulator.setMaxDistance(6378137 * 2.5);
+        manipulator.setDistance(6378137 * 3);
+        manipulator.setMaxDistance(6378137 * 4);
         manipulator.setMinDistance(6378137 * 0.95);
 
         // create the position locked manipulator

@@ -423,8 +423,8 @@ osgGlobe.Globe.prototype = {
 
         // create the orbit manipulators
         manipulator = manipulators.orbit = new osgGlobe.OrbitManipulator(options);
-        manipulator.setDistance(6378137 * 1.2);
-        manipulator.setMaxDistance(6378137 * 2.5);
+        manipulator.setDistance(6378137 * 3);
+        manipulator.setMaxDistance(6378137 * 4);
         manipulator.setMinDistance(6378137 * 0.95);
 
         // create the position locked manipulator
